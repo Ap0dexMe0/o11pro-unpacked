@@ -323,6 +323,6 @@ Streams are accessible via playlist format. The `-plstreamname` flag controls th
 - Script accounts use the format: `user=join@mail.com password=mypassword device=123456 pin=1234`
 - Proxy support: `http://user:pass@ip:port` and `socks5://user:pass@ip:port`
 
-## Credits:
+## Credits
 - Nulled (Cracked o11pro)
 - Lossui011
