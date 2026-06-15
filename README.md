@@ -4,6 +4,15 @@
 
 ---
 
+## Further Reading
+
+| Document | Description |
+|----------|-------------|
+| [API.md](docs/API.md) | Complete REST API reference all endpoints, methods, and auth details |
+| [RE.md](docs/RE.md) | Reverse engineering notes frontend deobfuscation analysis, Vue component map, config schema, and TODO
+
+---
+
 ## Quick Start
 
 ```bash
@@ -314,11 +323,6 @@ Streams are accessible via playlist format. The `-plstreamname` flag controls th
 - Script accounts use the format: `user=join@mail.com password=mypassword device=123456 pin=1234`
 - Proxy support: `http://user:pass@ip:port` and `socks5://user:pass@ip:port`
 
----
-
-## Further Reading
-
-| Document | Description |
-|----------|-------------|
-| [API.md](API.md) | Complete REST API reference all endpoints, methods, and auth details |
-| [RE.md](RE.md) | Reverse engineering notes frontend deobfuscation analysis, Vue component map, config schema, and TODO
+## Credits:
+- Nulled (Cracked o11pro)
+- Lossui011
