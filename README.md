@@ -4,6 +4,19 @@
 
 ---
 
+## Tech Stack
+
+| Layer | Technology | Details |
+|-------|-----------|---------|
+| **Backend** | **Golang** (Go) | ELF64 binary, CGo-linked (`libc`, `libpthread`, `libresolv`), statically compiled runtime with dynamic libc linking |
+| **Frontend** | **Vue.js 3** | Composition API, `<script setup>` SFCs, Pinia state management, Vue Router |
+| **HTTP Client** | **Axios** | API requests, JWT token auth |
+| **Video Player** | **HLS.js** | In-browser HLS stream playback |
+| **CSS** | **Tailwind CSS** | Utility-first classes throughout (`flex`, `gap-4`, `capitalize`, etc.) |
+| **Obfuscation** | **obfuscator.io** | String array rotation + base64 + RC4 cipher, `o11_0x3b01` decoder function with 6,922 encoded strings |
+
+---
+
 ## Quick Start
 
 ```bash
@@ -39,7 +52,7 @@ Open `http://<your-ip>:<port>` in a browser to access the web interface.
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-p` | **HTTP port** to listen on (required) | `0` (none - must be set) |
+| `-p` | **HTTP port** to listen on (required) | `0` (none  must be set) |
 | `-b` | HTTP bind address | `0.0.0.0` (all interfaces) |
 | `-https` | Enable HTTPS (requires `server.crt` and `server.key` in the O11 directory) | `false` |
 | `-baseurl` | HTTP base URL (for reverse proxy setups) | *(empty)* |
@@ -53,8 +66,8 @@ Open `http://<your-ip>:<port>` in a browser to access the web interface.
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-user` | Static admin username for web UI login | *(empty - temp account generated)* |
-| `-password` | Static admin password for web UI login | *(empty - temp account generated)* |
+| `-user` | Static admin username for web UI login | *(empty  temp account generated)* |
+| `-password` | Static admin password for web UI login | *(empty  temp account generated)* |
 | `-jwtsecret` | JWT secret for login sessions. Default is randomly generated on each start | *(random)* |
 
 ### Configuration & Files
@@ -124,9 +137,9 @@ These options are used when downloading and converting VOD (Video On Demand) str
 | Flag | Description | Default |
 |------|-------------|---------|
 | `-manifest` | Download and convert this manifest URL to MP4, then exit | *(empty)* |
-| `-video` | Video track index to grab | *(empty - all)* |
-| `-audio` | Audio track indexes to grab (comma-separated) | *(empty - all)* |
-| `-subs` | Subtitle indexes to grab (comma-separated or `all`) | *(empty - none)* |
+| `-video` | Video track index to grab | *(empty  all)* |
+| `-audio` | Audio track indexes to grab (comma-separated) | *(empty  all)* |
+| `-subs` | Subtitle indexes to grab (comma-separated or `all`) | *(empty  none)* |
 | `-extrasubs` | Extra subtitle file URL. Can be used multiple times | *(empty)* |
 | `-maxsegments` | Max segments to download (`0` = unlimited) | `0` |
 | `-dashperiod` | Force DASH period index. `-1` = all non-ad periods | `-2` |
@@ -143,6 +156,26 @@ These options are used when downloading and converting VOD (Video On Demand) str
 | `-key` | KID:KEY pair for decryption. Can be used multiple times | *(empty)* |
 | `-doh` | DNS-over-HTTPS URL for CDM requests | *(empty)* |
 | `-H` | Custom HTTP header for VOD requests (format: `key:value`). Can be used multiple times | *(empty)* |
+
+---
+
+## Web UI Pages
+
+The Vue.js frontend provides the following pages accessible via the navigation sidebar:
+
+| Page | Route | Description |
+|------|-------|-------------|
+| **Providers** | `/providers` | List of configured IPTV/OTT providers. Add, edit, delete, import, export providers |
+| **Linear** | `/linear` | Live channel management. Start/stop streams, view on-air status |
+| **Events** | `/events/:provider?` | Scheduled event streams with filtering and replay support |
+| **VOD** | `/vod` | Video-on-demand library per provider. Download and convert to MP4 |
+| **Recordings** | `/recordings/:provider?` | Manage stream recordings. Schedule and review recorded events |
+| **Monitoring** | `/monitoring` | Real-time stream status overview, running streams dashboard |
+| **Logs** | `/logs/:provider?/:stream?` | Per-channel and main log viewer. Export and clean logs |
+| **Users** | `/users` | User management. Create/edit users, set admin, assign provider access |
+| **Config** | `/config` | Provider configuration (script, CDM, network, channels, stream options) |
+| **Help** | `/help` | Built-in documentation with table of contents |
+| **Login** | `/login` | Authentication page. JWT-based token auth |
 
 ---
 
@@ -221,16 +254,52 @@ Access via `https://localhost:8443`.
 When using `-path`, O11 creates the following sub-directories:
 
 ```
-<path>/
+o11pro-unpacked/
 ├── hls/
-│   └── live/          # Live HLS segments (recommend RAMFS)
+│   ├── live/          # Live HLS segments (recommend RAMFS)
+│   ├── replay/        # Replayed stream segments
+│   └── vod/           # VOD stream segments
+├── dl/
+│   └── tmp/           # VOD download temp files
+├── epg/               # EPG data cache
+├── fonts/             # Custom fonts
+├── logos/             # Channel/provider logos
 ├── logs/              # Rotating log files
-├── providers/         # Provider configuration files
+├── manifests/         # Downloaded manifest cache
+├── offair/            # Off-air placeholder media
+├── overlay/           # Picture overlays for streams
+├── providers/         # Provider configuration files & scripts
+├── rec/               # Recording output files
+├── scripts/           # CDM scripts (o11.py auto-generated)
 ├── keys.txt           # KID:KEY decryption fallback
 ├── o11.cfg            # Main configuration
 ├── o11-job.cfg        # Jobs configuration
 └── o11-rec.cfg        # Recordings configuration
 ```
+
+---
+
+## EPG Access
+
+O11 serves EPG data in multiple formats:
+
+| Format | URL |
+|--------|-----|
+| XML (gzip) | `http://ip:epgport/providerid.xml.gz` |
+| XML (plain) | `http://ip:epgport/providerid.xml` |
+| Web UI | `http://ip:port/epg` |
+| API | `GET /epg/:provider?/:stream?` |
+
+Use the `-epgport` flag to enable the EPG endpoint.
+
+---
+
+## Playlist Access
+
+Streams are accessible via playlist format. The `-plstreamname` flag controls the display name format:
+
+- Default: `[%p] %s`  shows `[ProviderName] StreamName`
+- Custom: `-plstreamname "%s (%p)"`  shows `StreamName (ProviderName)`
 
 ---
 
@@ -248,12 +317,12 @@ When using `-path`, O11 creates the following sub-directories:
 ---
 
 ## Notes
-- resources/ is a embedded content from the unpacked binary
+
 - **The `-p` flag is required.** The binary will not start without an HTTP port.
 - Without `-user` / `-password`, a temporary admin account is generated on each start and printed to the log.
 - For HTTPS, both `server.crt` and `server.key` must exist in the O11 working directory.
 - The `-key` flag accepts KID:KEY pairs in hex format and can be specified multiple times for multiple keys.
 - The `-H` flag for custom headers can be repeated: `-H "Authorization:Bearer token" -H "X-Custom:value"`.
-- VOD downloader mode (`-manifest`) downloads, converts, and exits - it does not start the server.
-
----
+- VOD downloader mode (`-manifest`) downloads, converts, and exits  it does not start the server.
+- Script accounts use the format: `user=join@mail.com password=mypassword device=123456 pin=1234`
+- Proxy support: `http://user:pass@ip:port` and `socks5://user:pass@ip:port`
