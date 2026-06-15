@@ -38,6 +38,7 @@ Some portions of the executable may still retain structures inherited from the o
 * It should not be considered an official release from the original developers.
 * An unpacked executable does **not** mean clean or recovered source code.
 * If you encounter any issues or bugs, please provide sufficient information to reproduce them when reporting.
+* To make everything work properly, we must defeat the obfuscated JavaScript file first: [index-BX-yLeHZ.js](../resources/static/index-BX-yLeHZ.js)
 
 ---
 
