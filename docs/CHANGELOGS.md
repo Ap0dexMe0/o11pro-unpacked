@@ -131,7 +131,7 @@ The following 22 vulnerabilities were identified across three scan passes but ca
 
 ### Added
 
-- Static and runtime analysis of `o11pro_patched` v1.1.0 binary.
+- Static and runtime analysis of `o11pro` v1.1.0 binary.
 - End-to-end runtime verification suite (13 tests) covering: server startup, login/logout, JWT validation (`alg=none`, forged tokens, `Bearer` prefix, query parameter auth), path traversal, static file access, and `-allow` flag bypass.
 - Identification of 2 new patchable vulnerabilities and 7 additional non-patchable issues.
 - Confirmed all 16 previously applied patches (v1.0.0 + v1.1.0) remain intact.
@@ -210,7 +210,7 @@ See [1.3.0] for the complete and up-to-date categorized list of all open issues.
 
 ### Added
 
-- Complete security audit of `o11pro_unpacked` (ELF64 x86-64, Go/CGO, stripped, obfuscated).
+- Complete security audit of `o11pro` (ELF64 x86-64, Go/CGO, stripped, obfuscated).
 - Identification of 19 security vulnerabilities across Critical (3), High (6), Medium (7), Low (1), and Informational (2) severities.
 - Binary-level patching pipeline for string-replaceable vulnerabilities.
 - End-to-end test suite (15 tests) covering auth, API endpoints, JWT validation, path traversal, SQL injection, and header inspection.

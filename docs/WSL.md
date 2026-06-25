@@ -89,10 +89,10 @@ You should see something like: `ffmpeg version 4.4.2-0ubuntu0.22.04.1`
 mkdir -p ~/o11 && cd ~/o11
 
 # Download the latest unpacked binary
-wget https://github.com/Ap0dexMe0/o11pro-unpacked/releases/latest/download/o11pro_unpacked -O o11pro_unpacked
+wget https://github.com/Ap0dexMe0/o11pro-unpacked/releases/latest/download/o11pro -O o11pro
 
 # Make it executable
-chmod +x o11pro_unpacked
+chmod +x o11pro
 ```
 
 ### Option B: From Local Windows File
@@ -104,10 +104,10 @@ If you already downloaded the binary on Windows, you can access it from WSL. Win
 mkdir -p ~/o11 && cd ~/o11
 
 # Copy from Windows to WSL home
-cp /mnt/c/Users/YOUR_USERNAME/Downloads/o11pro_unpacked ./
+cp /mnt/c/Users/YOUR_USERNAME/Downloads/o11pro ./
 
 # Make it executable
-chmod +x o11pro_unpacked
+chmod +x o11pro
 ```
 
 > **Replace `YOUR_USERNAME`** with your actual Windows username. Use tab-completion: type `/mnt/c/Users/` and press Tab.
@@ -118,7 +118,7 @@ You can also drag and drop files directly into the WSL filesystem:
 
 1. Open WSL terminal
 2. Type `explorer.exe .` to open Windows Explorer at the current WSL directory
-3. Copy `o11pro_unpacked` into the Explorer window
+3. Copy `o11pro` into the Explorer window
 
 ---
 
@@ -128,7 +128,7 @@ You can also drag and drop files directly into the WSL filesystem:
 cd ~/o11
 
 # Start with a port and credentials
-./o11pro_unpacked -p 8080 -user admin -password mypass -stdout
+./o11pro -p 8080 -user admin -password mypass -stdout
 ```
 
 You should see:
@@ -147,7 +147,7 @@ INFO: webif http listening at 0.0.0.0:8080
 INFO: loaded 0 provider(s)
 ```
 
-> **If you get "Permission denied"**: Run `chmod +x o11pro_unpacked` again. If you get a "cannot execute binary file" error, make sure you're on WSL 2 (not WSL 1) and using an x86-64 Ubuntu.
+> **If you get "Permission denied"**: Run `chmod +x o11pro` again. If you get a "cannot execute binary file" error, make sure you're on WSL 2 (not WSL 1) and using an x86-64 Ubuntu.
 
 Open your Windows browser and go to:
 
@@ -210,7 +210,7 @@ Now other devices can access O11 at `http://<YOUR_WINDOWS_IP>:8080`
 ```bash
 cd ~/o11
 
-nohup ./o11pro_unpacked -p 8080 -user admin -password mypass \
+nohup ./o11pro -p 8080 -user admin -password mypass \
   -path ~/o11/data -stdout >> ~/o11/o11.log 2>&1 &
 
 echo $! > ~/o11/o11.pid
@@ -246,7 +246,7 @@ screen -S o11
 
 # Start O11
 cd ~/o11
-./o11pro_unpacked -p 8080 -user admin -password mypass -path ~/o11/data
+./o11pro -p 8080 -user admin -password mypass -path ~/o11/data
 
 # Detach from screen: press Ctrl+A then D
 # Reattach later:
@@ -272,7 +272,7 @@ After=network.target
 Type=simple
 User=YOUR_LINUX_USERNAME
 WorkingDirectory=/home/YOUR_LINUX_USERNAME/o11
-ExecStart=/home/YOUR_LINUX_USERNAME/o11/o11pro_unpacked -p 8080 -user admin -password mypass -path /home/YOUR_LINUX_USERNAME/o11/data
+ExecStart=/home/YOUR_LINUX_USERNAME/o11/o11pro -p 8080 -user admin -password mypass -path /home/YOUR_LINUX_USERNAME/o11/data
 Restart=on-failure
 RestartSec=5
 
@@ -325,7 +325,7 @@ Use the `-path` flag to keep all O11 data organized:
 ```bash
 mkdir -p ~/o11/data
 
-./o11pro_unpacked -p 8080 -user admin -password mypass -path ~/o11/data
+./o11pro -p 8080 -user admin -password mypass -path ~/o11/data
 ```
 
 O11 will create its directory structure automatically:
@@ -422,7 +422,7 @@ This is the most reliable method for auto-starting O11 when Windows boots.
    - Program/script: `wsl`
    - Add arguments:
      ```
-     -d Ubuntu -u YOUR_LINUX_USERNAME -- bash -c "cd ~/o11 && ./o11pro_unpacked -p 8080 -user admin -password mypass -path ~/o11/data -stdout >> ~/o11/o11.log 2>&1"
+     -d Ubuntu -u YOUR_LINUX_USERNAME -- bash -c "cd ~/o11 && ./o11pro -p 8080 -user admin -password mypass -path ~/o11/data -stdout >> ~/o11/o11.log 2>&1"
      ```
    - Click OK
 
@@ -441,7 +441,7 @@ Open Notepad and save this as `C:\o11-start.ps1`:
 
 ```powershell
 # Start O11 in WSL
-wsl -d Ubuntu -u YOUR_LINUX_USERNAME -- bash -c "cd ~/o11 && nohup ./o11pro_unpacked -p 8080 -user admin -password mypass -path ~/o11/data >> ~/o11/o11.log 2>&1 & echo $! > ~/o11/o11.pid"
+wsl -d Ubuntu -u YOUR_LINUX_USERNAME -- bash -c "cd ~/o11 && nohup ./o11pro -p 8080 -user admin -password mypass -path ~/o11/data >> ~/o11/o11.log 2>&1 & echo $! > ~/o11/o11.pid"
 
 # Wait for O11 to start
 Start-Sleep -Seconds 3
@@ -516,7 +516,7 @@ sudo cp /etc/letsencrypt/live/o11.example.com/privkey.pem ~/o11/server.key
 Start with HTTPS:
 
 ```bash
-./o11pro_unpacked -p 8443 -https -user admin -password mypass -path ~/o11/data
+./o11pro -p 8443 -https -user admin -password mypass -path ~/o11/data
 ```
 
 > **Note for WSL**: Windows Firewall will prompt you to allow the connection. Click **Allow**.
@@ -582,7 +582,7 @@ echo "tmpfs /home/YOUR_LINUX_USERNAME/o11/data/hls/live tmpfs defaults,size=512m
 
 > If you skip RAMFS, use the `-noramfs` flag when starting O11:
 > ```bash
-> ./o11pro_unpacked -p 8080 -noramfs -path ~/o11/data
+> ./o11pro -p 8080 -noramfs -path ~/o11/data
 > ```
 
 ### WSL Memory Limits
@@ -651,7 +651,7 @@ If your `C:` drive is small, you can point `-path` to a Windows drive:
 mkdir -p /mnt/d/o11-data
 
 # Start O11 with data on Windows drive
-./o11pro_unpacked -p 8080 -path /mnt/d/o11-data -user admin -password mypass
+./o11pro -p 8080 -path /mnt/d/o11-data -user admin -password mypass
 ```
 
 > **Performance note**: WSL filesystem (`~/o11/`) is faster than Windows drives (`/mnt/d/`). For best performance, keep the binary and live HLS segments in WSL, and use Windows drives only for VOD downloads and recordings.
@@ -663,15 +663,15 @@ mkdir -p /mnt/d/o11-data
 ### "Permission denied" when running the binary
 
 ```bash
-chmod +x ~/o11/o11pro_unpacked
+chmod +x ~/o11/o11pro
 ```
 
 If still failing, check if the file is on a Windows drive (NTFS doesn't support Linux permissions):
 
 ```bash
 # Move to WSL filesystem
-mv /mnt/c/Users/.../o11pro_unpacked ~/o11/
-chmod +x ~/o11/o11pro_unpacked
+mv /mnt/c/Users/.../o11pro ~/o11/
+chmod +x ~/o11/o11pro
 ```
 
 ### "cannot execute binary file: Exec format error"
@@ -701,7 +701,7 @@ kill -9 <PID>
 Or use a different port:
 
 ```bash
-./o11pro_unpacked -p 8081 -path ~/o11/data
+./o11pro -p 8081 -path ~/o11/data
 ```
 
 ### Can't access from Windows browser
@@ -711,7 +711,7 @@ Or use a different port:
 3. Try the WSL IP directly: `http://$(wsl hostname -I).Trim():8080`
 4. If using a specific bind address, try `-b 0.0.0.0`:
    ```bash
-   ./o11pro_unpacked -p 8080 -b 0.0.0.0 -path ~/o11/data
+   ./o11pro -p 8080 -b 0.0.0.0 -path ~/o11/data
    ```
 
 ### WSL keeps shutting down O11 when terminal closes
@@ -719,7 +719,7 @@ Or use a different port:
 Use `nohup`, `screen`, or `systemd` as described in Step 7. The `nohup` method is simplest:
 
 ```bash
-nohup ./o11pro_unpacked -p 8080 -path ~/o11/data >> ~/o11/o11.log 2>&1 &
+nohup ./o11pro -p 8080 -path ~/o11/data >> ~/o11/o11.log 2>&1 &
 ```
 
 ### FFmpeg not found
@@ -730,7 +730,7 @@ which ffmpeg
 # Should output: /usr/bin/ffmpeg
 
 # If using a custom path:
-./o11pro_unpacked -p 8080 -f /usr/bin/ffmpeg -path ~/o11/data
+./o11pro -p 8080 -f /usr/bin/ffmpeg -path ~/o11/data
 ```
 
 ### WSL port forwarding resets after reboot
@@ -754,14 +754,14 @@ netsh interface portproxy add v4tov4 address=0.0.0.0 port=8080 connectaddress=$w
 
 ```bash
 cd ~/o11
-./o11pro_unpacked -p 8080 -user admin -password mypass -path ~/o11/data
+./o11pro -p 8080 -user admin -password mypass -path ~/o11/data
 ```
 
 ### Start in Background
 
 ```bash
 cd ~/o11
-nohup ./o11pro_unpacked -p 8080 -user admin -password mypass -path ~/o11/data >> ~/o11/o11.log 2>&1 &
+nohup ./o11pro -p 8080 -user admin -password mypass -path ~/o11/data >> ~/o11/o11.log 2>&1 &
 echo $! > ~/o11/o11.pid
 ```
 
@@ -787,14 +787,14 @@ ps aux | grep o11pro
 
 ```bash
 cd ~/o11
-wget https://github.com/Ap0dexMe0/o11pro-unpacked/releases/latest/download/o11pro_unpacked -O o11pro_unpacked
-chmod +x o11pro_unpacked
+wget https://github.com/Ap0dexMe0/o11pro-unpacked/releases/latest/download/o11pro -O o11pro
+chmod +x o11pro
 ```
 
 ### Complete Start with All Options
 
 ```bash
-./o11pro_unpacked \
+./o11pro \
   -p 8080 \
   -streamport 9090 \
   -epgport 9091 \

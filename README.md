@@ -12,7 +12,7 @@
 | [CHANGELOG](docs/CHANGELOGS.md) | A completed changelog released                             |
 | [API](docs/API.md)              | Complete REST API reference: endpoints, methods, and authentication details                             |
 | [WSL](docs/WSL.md)              | Complete WSL setup guide                                                                                |
-| [RE](docs/RE.md)                | Reverse engineering notes: frontend deobfuscation analysis, Vue component map, config schema, and TODOs |
+| [MONITORING](docs/MONITORING.md) | Real-time attack detection: HTTP proxy monitor, audit logging, process/file/network surveillance       |
 
 ---
 
@@ -20,19 +20,19 @@
 
 ```bash
 # Minimum: just set a port
-./o11pro_unpacked -p 8080
+./o11pro -p 8080
 
 # With web UI login credentials
-./o11pro_unpacked -p 8080 -user admin -password yourpassword
+./o11pro -p 8080 -user admin -password yourpassword
 
 # Headless mode (no web UI)
-./o11pro_unpacked -p 8080 -headless
+./o11pro -p 8080 -headless
 
 # With separate EPG and streaming ports
-./o11pro_unpacked -p 8080 -epgport 8081 -streamport 8082
+./o11pro -p 8080 -epgport 8081 -streamport 8082
 
 # Debug mode
-./o11pro_unpacked -p 8080 -v 3 -stdout
+./o11pro -p 8080 -v 3 -stdout
 ```
 
 When started without `-user` and `-password`, a temporary admin account is auto-generated and printed to the log:
@@ -197,25 +197,25 @@ Open `http://<your-ip>:<port>` in a browser to access the web interface.
 ### Basic IPTV Proxy
 
 ```bash
-./o11pro_unpacked -p 8080 -user admin -password mysecretpass
+./o11pro -p 8080 -user admin -password mysecretpass
 ```
 
 ### Separate Streaming + EPG
 
 ```bash
-./o11pro_unpacked -p 8080 -streamport 9090 -epgport 9091
+./o11pro -p 8080 -streamport 9090 -epgport 9091
 ```
 
 ### HTTPS Mode
 
 ```bash
-./o11pro_unpacked -p 8443 -https
+./o11pro -p 8443 -https
 ```
 
 ### Full Debug Mode
 
 ```bash
-./o11pro_unpacked -p 8080 -v 5 -stdout
+./o11pro -p 8080 -v 5 -stdout
 ```
 
 ---
@@ -266,7 +266,7 @@ o11pro-unpacked/
 
 ## Credits
 
-* Nulled (Cracked O11Pro)
+* Nulled with his bullshit Backdoor (Cracked O11Pro)
 * Lossui011
 
 ---
