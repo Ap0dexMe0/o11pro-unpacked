@@ -71,60 +71,19 @@ if [ -f "$RUNME" ]; then
     # Make it executable
     chmod +x "$RUNME"
 
-    # Check if we already patched it (look for our marker)
-    if ! grep -q "# VENV_PATCHED" "$RUNME"; then
-        echo "Patching RunMe.sh to use virtual environment..."
-        # Insert venv PATH right after the existing export PATH line
-        sed -i.bak \
-            -e 's|^export PATH="/usr/bin:/bin:/usr/local/bin:${PATH:-}"|# VENV_PATCHED\nexport PATH="'"$VENV_DIR"'/bin:/usr/bin:/bin:/usr/local/bin:${PATH:-}"|' \
-            "$RUNME"
-        echo "RunMe.sh patched (backup saved as RunMe.sh.bak)"
-    else
-        echo "RunMe.sh already patched."
-    fi
+    echo "RunMe.sh PATH is configured dynamically."
 else
     echo "ERROR: RunMe.sh not found at $RUNME"
     exit 1
 fi
 
 echo "Checking required files in $SRC_DIR ..."
-REQUIRED_FILES=("o11pro" "o11.cfg" "providers/sample.cfg")
-MISSING=0
-for f in "${REQUIRED_FILES[@]}"; do
-    if [ ! -f "$SRC_DIR/$f" ]; then
-        echo "ERROR: Required file 'src/$f' not found."
-        MISSING=1
-    fi
-done
-if [ $MISSING -eq 1 ]; then
-    echo "Please place all required files under src/."
+if [ ! -f "$SRC_DIR/o11pro" ]; then
+    echo "ERROR: Required file 'src/o11pro' not found."
+    echo "Please place o11pro binary under src/."
     exit 1
 fi
 echo "All required files present."
-
-echo "Building hls_proxy channel URL config ..."
-"$VENV_DIR/bin/python3" -c "
-import json, sys
-cfg_path = '$SRC_DIR/providers/sample.cfg'
-out_path = '/tmp/o11pro_orig_urls.json'
-try:
-    d = json.load(open(cfg_path))
-    urls = {}
-    for s in d.get('Streams', []):
-        name = s.get('Name', '')
-        manifest = s.get('Manifest', '')
-        if name and manifest:
-            urls[name] = manifest
-    if urls:
-        json.dump(urls, open(out_path, 'w'), indent=2, ensure_ascii=False)
-        print(f'  Wrote {len(urls)} channel URLs to {out_path}')
-    else:
-        print('  WARNING: No channel URLs found in provider config')
-        json.dump({}, open(out_path, 'w'))
-except Exception as e:
-    print(f'  WARNING: Could not build URL config: {e}')
-    json.dump({}, open(out_path, 'w'))
-"
 
 echo ""
 MODE_PARTS=("o11pro :${1:-19999}")    # FIX: was $1 (unbound when no args)

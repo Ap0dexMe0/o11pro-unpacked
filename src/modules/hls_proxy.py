@@ -10,7 +10,7 @@ import base64
 import time
 import sys
 import os
-import argparse                          # FIX: was missing
+import argparse
 import threading
 import traceback
 import gc
@@ -20,7 +20,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from concurrent.futures import ThreadPoolExecutor
 
-CONFIG_FILE = '/tmp/o11pro_orig_urls.json'
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'cache', 'orig_urls.json')
 PROXY_PORT = 9999
 PROXY_BIND = '127.0.0.1'
 UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
@@ -32,6 +32,9 @@ MAX_THREAD_POOL = 32
 GC_INTERVAL_SEC = 60
 SEGMENT_STREAM_BUF = 65536
 
+# Global default auth (user, pass)
+_global_auth = None
+
 # Cached channel URLs (loaded once)
 _channel_urls = {}
 _channel_urls_lock = threading.Lock()
@@ -41,9 +44,24 @@ def _load_channel_urls():
     with _channel_urls_lock:
         if not _channel_urls:
             with open(CONFIG_FILE) as f:
-                _channel_urls = json.load(f)
+                raw = json.load(f)
+            # Support both {"name": "url"} and {"name": {"url":"...","auth":[...]}}
+            for k, v in raw.items():
+                _channel_urls[k] = v
             log(f"Loaded {len(_channel_urls)} channel URLs")
     return _channel_urls
+
+def _get_channel_entry(name):
+    """Return (url, auth) tuple for a channel. auth may be None."""
+    urls = _load_channel_urls()
+    entry = urls.get(name)
+    if entry is None:
+        return None, None
+    if isinstance(entry, dict):
+        url = entry.get('url', '')
+        auth = entry.get('auth')  # list [user, pass] or None
+        return url, auth
+    return entry, None  # plain string URL
 
 # Bounded CookieJar
 class BoundedCookieJar(http.cookiejar.CookieJar):
@@ -101,35 +119,64 @@ def _get_opener(cookie_jar=None):
             _opener_cache.popitem(last=False)
     return opener
 
-# URL fetching
-def fetch_url(url, timeout=15, cookie_jar=None, referer=None):
+# URL fetching — returns (body, status, content_type, final_url)
+def fetch_url(url, timeout=15, cookie_jar=None, referer=None, auth=None):
+    """Fetch a URL, following redirects. Returns (body, status, content_type, final_url).
+    
+    final_url is the URL after any HTTP redirects, which must be used as the
+    base for resolving relative URLs in HLS manifests.
+    """
     opener = _get_opener(cookie_jar)
-    headers = {'User-Agent': UA}
+    headers = {
+        'User-Agent': UA,
+        'Accept-Encoding': 'identity',  # prevent transparent gzip to avoid double-decode issues
+    }
     if referer:
         headers['Referer'] = referer
+    # Auth: per-request > global default
+    effective_auth = auth or _global_auth
+    if effective_auth:
+        if isinstance(effective_auth, (list, tuple)) and len(effective_auth) == 2:
+            cred = base64.b64encode(f"{effective_auth[0]}:{effective_auth[1]}".encode()).decode()
+            headers['Authorization'] = f"Basic {cred}"
+        elif isinstance(effective_auth, str) and ':' in effective_auth:
+            cred = base64.b64encode(effective_auth.encode()).decode()
+            headers['Authorization'] = f"Basic {cred}"
     req = urllib.request.Request(url, headers=headers)
     try:
         with opener.open(req, timeout=timeout) as resp:
-            return resp.read(), resp.status, resp.headers.get('Content-Type', 'application/octet-stream')
+            # Capture the final URL after any redirects
+            final_url = getattr(resp, 'url', None) or getattr(resp, 'geturl', lambda: url)() or url
+            return resp.read(), resp.status, resp.headers.get('Content-Type', 'application/octet-stream'), final_url
     except urllib.error.HTTPError as e:
         body = e.read() if e.fp else b''
         ct = e.headers.get('Content-Type', 'application/octet-stream') if e.headers else 'text/html'
-        return body, e.code, ct
+        final_url = getattr(e, 'url', None) or url
+        return body, e.code, ct, final_url
     except (urllib.error.URLError, OSError) as e:
-        return b'', 0, 'text/plain'
+        return b'', 0, 'text/plain', url
 
 # Manifest URL rewriting
 _compiled_uri_re = re.compile(r'URI="([^"]+)"')
 
 def rewrite_manifest(body, base_url):
+    """Rewrite all relative URLs in an HLS manifest to absolute proxy URLs."""
     lines = body.split('\n')
     rewritten = []
     for line in lines:
         stripped = line.strip()
-        if 'URI="' in stripped and stripped.startswith('#EXT-X-'):
+        if not stripped:
+            rewritten.append(line)
+            continue
+        # Handle #EXT-X-* tags that contain URI="..."
+        if stripped.startswith('#EXT-X-') and 'URI="' in stripped:
             rewritten.append(_compiled_uri_re.sub(
                 lambda m: f'URI="{_abs(m.group(1), base_url)}"', stripped))
-        elif stripped and not stripped.startswith('#'):
+        elif stripped.startswith('#'):
+            # Other comment/tag lines — keep as-is
+            rewritten.append(line)
+        elif not stripped.startswith('#'):
+            # Non-comment, non-empty line — treat as a resource URL
             rewritten.append(_abs(stripped, base_url))
         else:
             rewritten.append(line)
@@ -194,6 +241,7 @@ class RobustHandler(BaseHTTPRequestHandler):
         except Exception as e:
             with _stats_lock:
                 _stats['errors'] += 1
+            log(f"Handler error: {traceback.format_exc()}")
             try:
                 self._err(500, str(e))
             except:
@@ -203,20 +251,26 @@ class RobustHandler(BaseHTTPRequestHandler):
         parts = path.split('/')
         if len(parts) >= 4 and parts[3] == 'master.m3u8':
             name = urllib.parse.unquote(parts[2])
-            urls = _load_channel_urls()
-            if name in urls:
-                url = urls[name]
+            url, auth = _get_channel_entry(name)
+            if url:
                 q = query
                 if q:
                     url += ('&' if '?' in url else '?') + q
                 jar = _get_jar(urlparse(url).netloc)
-                body, st, ct = fetch_url(url, cookie_jar=jar)
+                body, st, ct, final_url = fetch_url(url, cookie_jar=jar, auth=auth)
                 if st == 200:
                     with _stats_lock:
                         _stats['manifests'] += 1
-                    rw = rewrite_manifest(body.decode('utf-8', 'replace'), url)
+                    # Use final_url (after redirects) as the base for resolving relative URLs
+                    text = body.decode('utf-8', 'replace')
+                    # Strip BOM if present
+                    if text and text[0] == '\ufeff':
+                        text = text[1:]
+                    rw = rewrite_manifest(text, final_url)
+                    log(f"[channel/{name}] base={url} final={final_url}")
                     self._ok('application/vnd.apple.mpegurl', rw.encode())
                 else:
+                    log(f"[channel/{name}] upstream returned {st} for {url}")
                     self._err(502, f"Upstream {st}")
             else:
                 self._err(404, "Channel not found")
@@ -227,13 +281,18 @@ class RobustHandler(BaseHTTPRequestHandler):
         target = _from_proxy(path[3:])
         referer = _get_referer(query)
         jar = _get_jar(urlparse(target).netloc)
-        body, st, ct = fetch_url(target, cookie_jar=jar, referer=referer)
+        body, st, ct, final_url = fetch_url(target, cookie_jar=jar, referer=referer)
         if st == 200:
             with _stats_lock:
                 _stats['manifests'] += 1
-            rw = rewrite_manifest(body.decode('utf-8', 'replace'), target)
+            # Use final_url (after redirects) as the base for resolving relative URLs
+            text = body.decode('utf-8', 'replace')
+            if text and text[0] == '\ufeff':
+                text = text[1:]
+            rw = rewrite_manifest(text, final_url)
             self._ok('application/vnd.apple.mpegurl', rw.encode())
         else:
+            log(f"[manifest] upstream returned {st} for {target}")
             self._err(502, f"Upstream {st}")
 
     def _handle_segment(self, path, query):
@@ -247,9 +306,15 @@ class RobustHandler(BaseHTTPRequestHandler):
                 return
         referer = _get_referer(query)
         jar = _get_jar(urlparse(target).netloc)
-        headers = {'User-Agent': UA}
+        headers = {
+            'User-Agent': UA,
+            'Accept-Encoding': 'identity',
+        }
         if referer:
             headers['Referer'] = referer
+        if _global_auth:
+            cred = base64.b64encode(_global_auth.encode()).decode()
+            headers['Authorization'] = f"Basic {cred}"
         opener = _get_opener(jar)
         req = urllib.request.Request(target, headers=headers)
         try:
@@ -374,19 +439,25 @@ def log(msg):
 
 # Main
 if __name__ == '__main__':
-    # FIX: was hardcoded, now accepts CLI arguments
-    parser = argparse.ArgumentParser(description='HLS Proxy for o11pro (memory-leak fixed)')
+    parser = argparse.ArgumentParser(description='HLS Proxy for o11pro (redirect-aware + auth)')
     parser.add_argument('--config', default=CONFIG_FILE,
                         help=f'Path to channel URLs JSON (default: {CONFIG_FILE})')
     parser.add_argument('--port', type=int, default=PROXY_PORT,
                         help=f'Proxy listen port (default: {PROXY_PORT})')
     parser.add_argument('--bind', default=PROXY_BIND,
                         help=f'Proxy bind address (default: {PROXY_BIND})')
+    parser.add_argument('--auth', default=None,
+                        help='Global Basic Auth credentials as user:pass '
+                             '(e.g. 1acd2d7afd8cb34099cb832862e3c08d:b85491a27c2852323ac704a07cf7b779)')
     args = parser.parse_args()
 
     CONFIG_FILE = args.config
     PROXY_PORT = args.port
     PROXY_BIND = args.bind
+
+    if args.auth:
+        _global_auth = args.auth
+        log(f"Global auth enabled")
 
     _load_channel_urls()
     assert _compiled_uri_re is not None
@@ -394,13 +465,15 @@ if __name__ == '__main__':
     maint = threading.Thread(target=_maintenance_loop, daemon=True)
     maint.start()
 
-    print(f"HLS Proxy on {PROXY_BIND}:{PROXY_PORT} (memory-optimized)", flush=True)
+    print(f"HLS Proxy on {PROXY_BIND}:{PROXY_PORT} (redirect-aware + auth)", flush=True)
     print(f"  Config:       {CONFIG_FILE}", flush=True)
     print(f"  Channels:     {len(_channel_urls)}", flush=True)
     print(f"  Thread pool:  {MAX_THREAD_POOL} workers", flush=True)
     print(f"  Cookie limit: {MAX_COOKIES_PER_JAR}/jar", flush=True)
     print(f"  Streaming buffer: {SEGMENT_STREAM_BUF} bytes", flush=True)
     print(f"  GC interval:  {GC_INTERVAL_SEC}s", flush=True)
+    if _global_auth:
+        print(f"  Global auth:   enabled", flush=True)
     print(f"", flush=True)
     print(f"  Routes:", flush=True)
     print(f"    /channel/{{name}}/master.m3u8  - Channel master manifest", flush=True)

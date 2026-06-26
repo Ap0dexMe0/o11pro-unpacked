@@ -10,7 +10,7 @@
 #   - Correct PATH for python3.13 dependencies
 #
 # Usage:
-#   ./RunMe.sh                    # Run with defaults (port 19999, verbose=2)
+#   ./RunMe.sh                    # Run with defaults (port 1337, verbose=2)
 #   ./RunMe.sh 8080               # Run on custom port
 #   ./RunMe.sh 8080 4             # Run on port 8080 with verbose=4 (trace)
 #   GOMEMLIMIT=4G ./RunMe.sh      # Override memory limit
@@ -20,8 +20,6 @@
 #
 # Files required (in same directory as this script):
 #   o11pro          Patched binary
-#   o11.cfg                       Global config
-#   providers/sample.cfg           Provider config
 #   keys.txt                      DRM KID:key pairs (optional)
 
 set -euo pipefail
@@ -29,32 +27,31 @@ set -euo pipefail
 # Configuration
 
 # Security monitor: set to true to run through the HTTP proxy/monitor
-# Architecture: Client -> :19998 (proxy/monitor) -> :19999 (real o11 API)
-MONITOR="${MONITOR:-false}"
+# Architecture: Client -> :1339 (proxy/monitor) -> :1337 (real o11 API)
+MONITOR="${MONITOR:-true}"
 
 # Monitor proxy listen port (only used when MONITOR=true)
-MONITOR_PORT="${MONITOR_PORT:-19998}"
+MONITOR_PORT="${MONITOR_PORT:-1339}"
 
 # FIX: HLS Proxy config was missing entirely
-# Architecture: Player -> :9999 (hls_proxy) -> upstream CDN
+# Architecture: Player -> :1338 (hls_proxy) -> upstream CDN
 HLS_PROXY="${HLS_PROXY:-true}"
-HLS_PROXY_PORT="${HLS_PROXY_PORT:-9999}"
-HLS_PROXY_BIND="${HLS_PROXY_BIND:-0.0.0.0}"
-HLS_PROXY_CONFIG="${HLS_PROXY_CONFIG:-/tmp/o11pro_orig_urls.json}"
-
+HLS_PROXY_PORT="${HLS_PROXY_PORT:-1338}"
+HLS_PROXY_BIND="${HLS_PROXY_BIND:-127.0.0.1}"
 # Path setup: need /usr/bin first so binary spawns python3.13 (has deps)
 # instead of venv python3.12 (lacks deps like curl_cffi, cloudscraper)
 # VENV_PATCHED
-export PATH="/home/z/my-project/o11/venv/bin:/usr/bin:/bin:/usr/local/bin:${PATH:-}"
 
-# Port for HTTP API and streaming (default 19999, override with $1)
-PORT="${1:-19999}"
+KID_PATCH_OFFSET="${KID_PATCH_OFFSET:-0x15625cd}"
+
+# Port for HTTP API and streaming (default 1337, override with $1)
+PORT="${1:-1337}"
 
 # FIX: was VERBOSE="${2:-2}" (always defaulted to 2 even when $2 was set)
 VERBOSE="${2:-2}"
 
-# Bind address: 0.0.0.0 = all interfaces (use 127.0.0.1 for localhost-only)
-BIND="${BIND:-0.0.0.0}"
+# Bind address: 127.0.0.1 = all interfaces (use 127.0.0.1 for localhost-only)
+BIND="${BIND:-127.0.0.1}"
 
 GOMEMLIMIT="${GOMEMLIMIT:-2GiB}"
 KEEP_FALSE=true
@@ -65,6 +62,9 @@ ADMIN_PASS="${ADMIN_PASS:-}"
 
 # Working directory (where binary and configs live)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+export PATH="$PROJECT_ROOT/venv/bin:/usr/bin:/bin:/usr/local/bin:${PATH:-}"
+HLS_PROXY_CONFIG="${HLS_PROXY_CONFIG:-$PROJECT_ROOT/cache/orig_urls.json}"
 cd "$SCRIPT_DIR"
 
 # Pre-flight checks
@@ -83,7 +83,7 @@ fi
 # Verify the binary has the KID patch (not the original REDA bug)
 KID_PATCH=$(python3 -c "
 with open('$BINARY','rb') as f:
-    f.seek(0x15625cd)
+    f.seek($KID_PATCH_OFFSET)
     b = f.read(4)
     print('OK' if b == b'%02x' else 'MISSING')
 " 2>/dev/null || echo "CHECK_FAILED")
@@ -93,30 +93,7 @@ if [ "$KID_PATCH" != "OK" ]; then
     echo ""
 fi
 
-# Verify the string patch (nulled!! -> Ap0dexMe0)
-STRING_PATCH=$(python3 -c "
-with open('$BINARY','rb') as f:
-    f.seek(0x1a6c350)
-    b = f.read(9)
-    print('OK' if b == b'Ap0dexMe0' else 'MISSING')
-" 2>/dev/null || echo "CHECK_FAILED")
-
-if [ "$STRING_PATCH" != "OK" ]; then
-    echo "NOTE: String patch (nulled!! -> Ap0dexMe0) not detected."
-    echo ""
-fi
-
 chmod +x "$BINARY"
-
-if [ ! -f "o11.cfg" ]; then
-    echo "ERROR: Global config 'o11.cfg' not found"
-    exit 1
-fi
-
-if [ ! -f "providers/sample.cfg" ]; then
-    echo "ERROR: Provider config 'providers/sample.cfg' not found"
-    exit 1
-fi
 
 if [ ! -f "keys.txt" ]; then
     echo "WARNING: keys.txt not found encrypted streams will fail"
@@ -142,29 +119,15 @@ fi
 # Prepare directories
 
 echo "Preparing directories..."
-mkdir -p hls/live keys epg dl manifests offair overlay logos fonts rec scripts logs providers
+mkdir -p hls/live keys epg dl manifests offair overlay logos fonts rec scripts logs providers cache
 
 if [ -f "keys.txt" ] && [ ! -f "keys/keys.txt" ]; then
     cp keys.txt keys/ 2>/dev/null || true
 fi
 
-# Apply config overrides
-
-if [ "$MAX_STREAMS" != "0" ]; then
-    echo "Setting MaxConcurrentStreams=$MAX_STREAMS in provider config..."
-    python3 -c "
-import json
-with open('providers/sample.cfg') as f:
-    cfg = json.load(f)
-cfg['MaxConcurrentStreams'] = $MAX_STREAMS
-with open('providers/sample.cfg', 'w') as f:
-    json.dump(cfg, f, indent=4, ensure_ascii=False)
-" 2>/dev/null || echo "  (failed to patch config continuing with existing value)"
-fi
-
 # Build command line
 
-ARGS="-c o11.cfg -p $PORT -b $BIND -headless -stdout -v $VERBOSE"
+ARGS="-c o11.cfg -p $PORT -b $BIND -stdout -v $VERBOSE"
 
 if [ "$KEEP_FALSE" = "true" ]; then
     ARGS="$ARGS -keep=false"
@@ -234,7 +197,6 @@ echo "  Max streams:   ${MAX_STREAMS:-unlimited}"
 echo "  HTTPS:         $HTTPS"
 echo "  HLS Proxy:     $HLS_PROXY${HLS_PROXY:+ (port $HLS_PROXY_PORT)}"
 echo "  Security mon:  $MONITOR${MONITOR:+ (port $MONITOR_PORT)}"
-echo "  Config:        o11.cfg + providers/sample.cfg"
 echo "=========================================="
 echo ""
 echo "Service endpoints:"
@@ -251,7 +213,7 @@ if [ "$MONITOR" = "true" ]; then
     echo "  Audit log:           logs/audit.log"
     echo "  Alert log:           logs/audit_alerts.log"
 fi
-echo "  (use 127.0.0.1 instead of 0.0.0.0 in your browser)"
+echo "  (use 127.0.0.1 instead of 127.0.0.1 in your browser)"
 echo ""
 echo "Login: admin / <see temp password in log below>"
 echo ""
@@ -284,12 +246,14 @@ if [ "$MONITOR" = "true" ] || [ "$HLS_PROXY" = "true" ]; then
 
     # Wait for o11pro to be ready
     echo "Waiting for o11pro to be ready on port $PORT..."
-    for i in $(seq 1 30); do
+    _O11_TRIES=0
+    while [ $_O11_TRIES -lt 30 ]; do
+        _O11_TRIES=$((_O11_TRIES + 1))
         if python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1',$PORT)); s.close()" 2>/dev/null; then
             echo "o11pro is ready"
             break
         fi
-        if [ $i -eq 30 ]; then
+        if [ $_O11_TRIES -eq 30 ]; then
             echo "ERROR: o11pro did not start in time"
             kill "$O11_PID" 2>/dev/null || true
             exit 1
@@ -343,7 +307,7 @@ if [ "$MONITOR" = "true" ] || [ "$HLS_PROXY" = "true" ]; then
         echo "Security monitor enabled"
         echo "  Proxy port:   $MONITOR_PORT  (-> o11 API :$PORT)"
         echo "  Process scan: PID $O11_PID"
-        echo "  File watch:   keys.txt, providers/, o11.cfg, logs/, hls/"
+        echo "  File watch:   keys.txt, providers/, logs/, hls/"
         echo "  Audit log:    logs/audit.log"
         echo "  Alert log:    logs/audit_alerts.log"
         echo ""

@@ -18,7 +18,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 
 VERSION = "1.0.0"
-DEFAULT_PID_FILE = "/tmp/o11_pid"
+DEFAULT_PID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'cache', 'o11_pid')
 DEFAULT_AUDIT_LOG = "audit.log"
 DEFAULT_ALERT_LOG = "audit_alerts.log"
 DEFAULT_PROXY_PORT = 19998
@@ -777,7 +777,7 @@ def find_o11_pid():
         except (FileNotFoundError, ValueError):
             pass
 
-    for pid_file in (DEFAULT_PID_FILE, '/tmp/o11e2e/pid'):
+    for pid_file in (DEFAULT_PID_FILE, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'cache', 'o11_pid')):
         try:
             with open(pid_file) as f:
                 pid = int(f.read().strip())
