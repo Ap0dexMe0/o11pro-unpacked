@@ -27,7 +27,7 @@ KID_PATCH_OFFSET="${KID_PATCH_OFFSET:-0x15625cd}"
 
 PORT="${1:-1337}"
 VERBOSE="${2:-2}"
-BIND="${BIND:-127.0.0.1}"
+BIND="${BIND:-0.0.0.0}"
 
 GOMEMLIMIT="${GOMEMLIMIT:-2GiB}"
 KEEP_FALSE=true
@@ -194,20 +194,24 @@ if [ "$MONITOR" = "true" ]; then
     --log "logs/audit.log"
     --alerts "logs/audit_alerts.log"
   )
+  if [ "$HLS_PROXY" = "true" ]; then
+    MONITOR_CMD+=(--hls-target "127.0.0.1:$HLS_PROXY_PORT")
+  fi
   if [ -n "$O11_PID" ] && kill -0 "$O11_PID" 2>/dev/null; then
     MONITOR_CMD+=(--pid "$O11_PID")
   fi
   [ -n "${MONITOR_ARGS:-}" ] && MONITOR_CMD+=($MONITOR_ARGS)
 
-  echo
   echo -e "  ${GRN}\xE2\x96\xB6${RST}  ${BLD}Security monitor${RST} on :${MONITOR_PORT}"
-  echo -e "  ${DIM}  Web UI     http://${BIND}:${MONITOR_PORT}${RST}"
-  echo -e "  ${DIM}  Audit log  logs/audit.log${RST}"
-  echo
-  echo -e "  ${DIM}Press Ctrl+C to stop all services${RST}"
-  echo
+  "${MONITOR_CMD[@]}" &
+  _BG_PIDS="$_BG_PIDS $!"
+  ok "monitor" "PID $!"
 
-  exec "${MONITOR_CMD[@]}"
+  echo
+  echo -e "  ${DIM}  Web UI     http://${BIND}:${PORT}${RST}"
+  echo -e "  ${DIM}  HLS proxy  http://${BIND}:${HLS_PROXY_PORT}/channel/{name}/master.m3u8${RST}"
+  echo -e "  ${DIM}  Monitor    http://${BIND}:${MONITOR_PORT} (optional, with HTTP inspection)${RST}"
+  echo -e "  ${DIM}  Audit log  logs/audit.log${RST}"
 fi
 
 echo

@@ -7,6 +7,7 @@ import json
 import socket
 import struct
 import signal
+import ipaddress
 import argparse
 import threading
 import subprocess
@@ -26,6 +27,32 @@ SCAN_INTERVAL = 2.0
 EXFIL_THRESHOLD = 100 * 1024 * 1024
 MAX_LOG_SIZE = 100 * 1024 * 1024
 MAX_LOG_FILES = 5
+
+TRUSTED_NETWORKS = [
+    '127.0.0.0/8',
+    '10.0.0.0/8',
+    '172.16.0.0/12',
+    '192.168.0.0/16',
+    '::1/128',
+]
+
+ATTACKER_IPS = set()
+
+def parse_xforwarded_for(header_value):
+    if not header_value:
+        return None
+    ips = [ip.strip() for ip in header_value.split(',')]
+    return ips[0] if ips else None
+
+def is_trusted_ip(ip_str):
+    try:
+        addr = ipaddress.ip_address(ip_str)
+        for net in TRUSTED_NETWORKS:
+            if addr in ipaddress.ip_network(net, strict=False):
+                return True
+        return False
+    except ValueError:
+        return True
 
 ATTACK_SIGNATURES = {
     "command_injection": [
@@ -319,8 +346,7 @@ class AttackDetector:
                     compiled.append((re.compile(p, re.IGNORECASE), category))
             self.compiled[category] = compiled
 
-    def scan_string(self, text, source='http', context=''):
-        """Scan a string for attack patterns. Returns list of matches."""
+    def scan_string(self, text, source='http', context='', client_ip=None):
         if not text:
             return []
         text_str = text if isinstance(text, str) else text.decode('utf-8', errors='replace')
@@ -328,11 +354,18 @@ class AttackDetector:
 
         for category, patterns in self.compiled.items():
             if category in ('suspicious_file_access', 'suspicious_process'):
-                continue  # these are handled separately
+                continue
             for regex, desc in patterns:
                 for m in regex.finditer(text_str):
                     severity = self._severity(category)
                     details = f"{desc}: matched '{m.group()[:80]}' in {context}"
+                    if client_ip:
+                        details += f" [client: {client_ip}"
+                        if not is_trusted_ip(client_ip):
+                            details += " EXTERNAL"
+                        details += "]"
+                        if not is_trusted_ip(client_ip):
+                            ATTACKER_IPS.add(client_ip)
                     self.logger.log(f"attack_{category}", severity, source, details, text_str[:500])
                     matches.append((category, desc, m.group()))
 
@@ -350,23 +383,20 @@ class AttackDetector:
         }
         return severities.get(category, 'MEDIUM')
 
-    def scan_url(self, url, source='http'):
-        """Scan a URL for attacks."""
-        return self.scan_string(url, source, f'URL: {url[:100]}')
+    def scan_url(self, url, source='http', client_ip=None):
+        return self.scan_string(url, source, f'URL: {url[:100]}', client_ip)
 
-    def scan_headers(self, headers, source='http'):
-        """Scan HTTP headers for attacks."""
+    def scan_headers(self, headers, source='http', client_ip=None):
         for key, value in headers.items():
-            self.scan_string(value, source, f'header {key}')
+            self.scan_string(value, source, f'header {key}', client_ip)
 
-    def scan_body(self, body, source='http'):
-        """Scan HTTP body for attacks."""
+    def scan_body(self, body, source='http', client_ip=None):
         if isinstance(body, bytes):
             try:
                 body = body.decode('utf-8', errors='replace')
             except:
                 return []
-        return self.scan_string(body, source, 'request body')
+        return self.scan_string(body, source, 'request body', client_ip)
 
 
 class ProcessMonitor:
@@ -600,27 +630,42 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
     logger = None
     target_host = '127.0.0.1'
     target_port = 19999
+    hls_host = None
+    hls_port = None
+
+    def _route_target(self):
+        if self.hls_host and self.hls_port and self.path.startswith(('/channel/', '/m/', '/s/')):
+            return self.hls_host, self.hls_port
+        return self.target_host, self.target_port
 
     def log_message(self, format, *args):
-        pass  # suppress default logging
+        pass
 
     def _forward(self, method):
-        """Forward request to target and scan for attacks."""
         content_length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_length) if content_length > 0 else b''
 
-        self.logger.log('http_request', 'INFO', 'http',
-                        f'{method} {self.path} from {self.client_address[0]}')
-        self.detector.scan_url(self.path, 'http')
-        self.detector.scan_headers(dict(self.headers), 'http')
-        if body:
-            self.detector.scan_body(body, 'http')
+        real_client_ip = parse_xforwarded_for(self.headers.get('X-Forwarded-For'))
+        if not real_client_ip:
+            real_client_ip = self.client_address[0]
+        is_external = not is_trusted_ip(real_client_ip)
 
+        self.logger.log('http_request', 'INFO', 'http',
+                        f'{method} {self.path} from {real_client_ip} (proxy-conn: {self.client_address[0]})')
+        if is_external:
+            self.logger.log('external_request', 'MEDIUM', 'http',
+                            f'External request from {real_client_ip}: {method} {self.path}')
+        self.detector.scan_url(self.path, 'http', client_ip=real_client_ip)
+        self.detector.scan_headers(dict(self.headers), 'http', client_ip=real_client_ip)
+        if body:
+            self.detector.scan_body(body, 'http', client_ip=real_client_ip)
+
+        dst_host, dst_port = self._route_target()
         
         try:
-            conn = http.client.HTTPConnection(self.target_host, self.target_port, timeout=30)
+            conn = http.client.HTTPConnection(dst_host, dst_port, timeout=30)
             headers = dict(self.headers)
-            headers['Host'] = f'{self.target_host}:{self.target_port}'
+            headers['Host'] = f'{dst_host}:{dst_port}'
             conn.request(method, self.path, body=body, headers=headers)
             response = conn.getresponse()
             resp_body = response.read()
@@ -671,15 +716,21 @@ class ThreadedProxyServer(ThreadingMixIn, HTTPServer):
     allow_reuse_address = True
 
 
-def run_proxy(port, target_host, target_port, detector, logger):
-    """Run the HTTP proxy server."""
+def run_proxy(port, target_host, target_port, detector, logger, hls_target=None):
     ProxyRequestHandler.detector = detector
     ProxyRequestHandler.logger = logger
     ProxyRequestHandler.target_host = target_host
     ProxyRequestHandler.target_port = target_port
+    if hls_target:
+        hls_host, _, hls_port_str = hls_target.partition(':')
+        ProxyRequestHandler.hls_host = hls_host
+        ProxyRequestHandler.hls_port = int(hls_port_str)
     server = ThreadedProxyServer(('0.0.0.0', port), ProxyRequestHandler)
+    routes = f'o11pro API -> {target_host}:{target_port}'
+    if hls_target:
+        routes += f', HLS -> {hls_target}'
     logger.log('proxy_start', 'INFO', 'http',
-               f'Proxy listening on 0.0.0.0:{port}, forwarding to {target_host}:{target_port}')
+               f'Proxy listening on 0.0.0.0:{port}, {routes}')
     server.serve_forever()
 
 
@@ -786,17 +837,20 @@ def find_o11_pid():
         except (FileNotFoundError, ValueError):
             pass
 
-    for entry in os.listdir('/proc'):
-        if not entry.isdigit():
-            continue
-        try:
-            with open(f'/proc/{entry}/cmdline', 'rb') as f:
-                cmdline = f.read().decode('utf-8', errors='replace')
-            for pattern in name_patterns:
-                if pattern in cmdline:
-                    return int(entry)
-        except (FileNotFoundError, PermissionError):
-            pass
+    try:
+        for entry in os.listdir('/proc'):
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f'/proc/{entry}/cmdline', 'rb') as f:
+                    cmdline = f.read().decode('utf-8', errors='replace')
+                for pattern in name_patterns:
+                    if pattern in cmdline:
+                        return int(entry)
+            except (FileNotFoundError, PermissionError):
+                pass
+    except FileNotFoundError:
+        pass
 
     return None
 
@@ -812,7 +866,20 @@ def main():
     parser.add_argument('--no-proc', action='store_true', help='Disable process monitoring')
     parser.add_argument('--no-files', action='store_true', help='Disable file watching')
     parser.add_argument('--once', action='store_true', help='Run one scan and exit')
+    parser.add_argument('--trusted-networks', default='',
+                        help='Comma-separated CIDR ranges of your own network (e.g. "10.0.0.0/8,192.168.0.0/16"). IPs outside these ranges are treated as external attackers.')
+    parser.add_argument('--hls-target', default='',
+                        help='HLS proxy backend host:port (e.g. "127.0.0.1:1338"). Requests to /channel/, /m/, /s/ will be forwarded here.')
     args = parser.parse_args()
+
+    if args.trusted_networks:
+        custom_nets = [n.strip() for n in args.trusted_networks.split(',') if n.strip()]
+        for net in custom_nets:
+            try:
+                ipaddress.ip_network(net, strict=False)
+                TRUSTED_NETWORKS.append(net)
+            except ValueError as e:
+                print(f"Invalid trusted network CIDR '{net}': {e}", file=sys.stderr)
 
     logger = AuditLogger(args.log, args.alerts)
     detector = AttackDetector(logger)
@@ -825,12 +892,15 @@ def main():
     if args.proxy_mode:
         proxy_thread = threading.Thread(
             target=run_proxy,
-            args=(args.proxy_port, '127.0.0.1', args.target_port, detector, logger),
+            args=(args.proxy_port, '127.0.0.1', args.target_port, detector, logger,
+                  args.hls_target or None),
             daemon=True
         )
         proxy_thread.start()
-        logger.log('startup', 'INFO', 'main',
-                   f'Proxy mode active point your client to :{args.proxy_port} instead of :{args.target_port}')
+        msg = f'Proxy mode active on :{args.proxy_port}, forwarding to :{args.target_port}'
+        if args.hls_target:
+            msg += f' (HLS -> {args.hls_target})'
+        logger.log('startup', 'INFO', 'main', msg)
 
     pid = args.pid or find_o11_pid()
     if not pid:
