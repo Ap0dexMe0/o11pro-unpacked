@@ -208,8 +208,8 @@ mkdir -p "$INSTALL_DIR/src/fonts"
 mkdir -p "$INSTALL_DIR/src/rec"
 mkdir -p "$INSTALL_DIR/src/scripts"
 mkdir -p "$INSTALL_DIR/src/logs"
-mkdir -p "$INSTALL_DIR/providers"
-mkdir -p "$INSTALL_DIR/cache"
+mkdir -p "$INSTALL_DIR/src/providers"
+mkdir -p "$INSTALL_DIR/src/cache"
 ok "directories" "created"
 
 # ─── Done — launch ───────────────────────────────────────────────────────

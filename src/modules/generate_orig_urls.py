@@ -3,8 +3,8 @@
 
 Usage:
     python3 generate_orig_urls.py
-    python3 generate_orig_urls.py --dir ../providers  (custom provider dir)
-    python3 generate_orig_urls.py --output ../../cache/orig_urls.json
+    python3 generate_orig_urls.py --dir ./providers  (custom provider dir)
+    python3 generate_orig_urls.py --output ./cache/orig_urls.json
 """
 import json
 import os
@@ -13,7 +13,7 @@ import glob
 import argparse
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, '..', '..'))
+PROJECT_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, '..'))
 DEFAULT_PROVIDERS_DIR = os.path.join(PROJECT_DIR, 'providers')
 DEFAULT_OUTPUT = os.path.join(PROJECT_DIR, 'cache', 'orig_urls.json')
 
