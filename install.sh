@@ -38,22 +38,20 @@ for arg in "$@"; do
 done
 [ "${O11PRO_YES:-0}" = "1" ] && FORCE=1
 
-# ─── Colors ──────────────────────────────────────────────────────────────
-RST='\033[0m'
-BLD='\033[1m'
-DIM='\033[2m'
-RED='\033[0;31m'
-GRN='\033[0;32m'
-YLW='\033[0;33m'
-BLU='\033[0;34m'
-CYN='\033[0;36m'
+# ─── Symbols ─────────────────────────────────────────────────────────────
+# Use Unicode symbols in bash/zsh, ASCII fallback in POSIX sh (dash).
+_ok='*'; _info='>'; _warn='!'; _fail='x'
+_test=$(printf '\xE2\x9C\x94' 2>/dev/null) || true
+case "$_test" in *\\*) ;; *)
+  _ok='\xE2\x9C\x94'; _info='\xE2\x96\xB6'; _warn='\xE2\x9A\xA0'; _fail='\xE2\x9C\x98'
+esac
 
-ok()    { printf "  ${GRN}\xE2\x9C\x94${RST} ${BLD}%s${RST} %s\n" "$1" "${2-}"; }
-info()  { printf "  ${CYN}\xE2\x96\xB6${RST} ${DIM}%s${RST}\n" "$1"; }
-warn()  { printf "  ${YLW}\xE2\x9A\xA0${RST} ${BLD}%s${RST} %s\n" "$1" "${2-}"; }
-fail()  { printf "  ${RED}\xE2\x9C\x98${RST} ${RED}%s${RST}\n" "$1"; exit 1; }
-sep()   { printf "  ${DIM}----------------------------------------${RST}\n"; }
-header(){ printf "\n  ${BLD}%s${RST}\n  ${DIM}%s${RST}\n\n" "$1" "${2-}"; }
+ok()    { printf "  ${_ok} %s %s\n" "$1" "${2-}"; }
+info()  { printf "  ${_info} %s\n" "$1"; }
+warn()  { printf "  ${_warn} %s %s\n" "$1" "${2-}"; }
+fail()  { printf "  ${_fail} %s\n" "$1"; exit 1; }
+sep()   { printf "  ----------------------------------------\n"; }
+header(){ printf "\n%s\n%s\n\n" "$1" "${2-}"; }
 
 # ─── Check prerequisites ─────────────────────────────────────────────────
 header "o11pro Installer" "One-command setup for o11pro-unpacked"
@@ -115,7 +113,7 @@ fi
 # ─── Install ─────────────────────────────────────────────────────────────
 sep
 
-info "Installing to ${BLD}$INSTALL_DIR${RST}..."
+info "Installing to $INSTALL_DIR..."
 
 # Ensure parent directory exists
 PARENT_DIR=$(dirname "$INSTALL_DIR")
@@ -135,7 +133,7 @@ else
   rm -rf "$INSTALL_DIR"
   git clone --depth 1 -b "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
 fi
-ok "repository" "cloned to ${DIM}$INSTALL_DIR${RST}"
+ok "repository" "cloned to $INSTALL_DIR"
 
 cd "$INSTALL_DIR"
 
@@ -163,7 +161,7 @@ done
 
 if [ -n "$BINARY" ]; then
   chmod +x "$BINARY"
-  ok "binary" "ready (${DIM}$BINARY${RST})"
+  ok "binary" "ready ($BINARY)"
 else
   warn "binary" "not found in src/ — check your download"
 fi
@@ -172,11 +170,29 @@ fi
 [ -f "src/RunMe.sh" ] && chmod +x "src/RunMe.sh"
 ok "launcher" "ready"
 
-# ─── Check for FFmpeg ────────────────────────────────────────────────────
+# ─── FFmpeg ──────────────────────────────────────────────────────────────
 if has_cmd ffmpeg; then
   ok "ffmpeg" "$(ffmpeg -version 2>&1 | head -1 | sed 's/ffmpeg version //' | sed 's/ Copyright.*//')"
 else
-  warn "ffmpeg not found" "install it for transcoding support"
+  info "ffmpeg not found — installing..."
+  if has_cmd apt-get; then
+    apt-get update -qq && apt-get install -y -qq ffmpeg
+  elif has_cmd yum; then
+    yum install -y ffmpeg 2>/dev/null || \
+    yum install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm 2>/dev/null && \
+    yum install -y ffmpeg ffmpeg-devel
+  elif has_cmd apk; then
+    apk add ffmpeg
+  elif has_cmd zypper; then
+    zypper install -y ffmpeg
+  elif has_cmd pacman; then
+    pacman -S --noconfirm ffmpeg
+  else
+    warn "ffmpeg" "could not install automatically — install manually"
+  fi
+  if has_cmd ffmpeg; then
+    ok "ffmpeg" "$(ffmpeg -version 2>&1 | head -1 | sed 's/ffmpeg version //' | sed 's/ Copyright.*//')"
+  fi
 fi
 
 # ─── Create runtime directories ──────────────────────────────────────────
@@ -196,12 +212,21 @@ mkdir -p "$INSTALL_DIR/providers"
 mkdir -p "$INSTALL_DIR/cache"
 ok "directories" "created"
 
-# ─── Done ────────────────────────────────────────────────────────────────
+# ─── Done — launch ───────────────────────────────────────────────────────
 sep
 echo
-printf "  ${GRN}\xE2\x9C\x94${RST} ${BLD}o11pro installed successfully${RST}\n"
+printf "  ${_ok} o11pro installed successfully\n"
+echo
+printf "  Starting o11pro...\n"
 echo
 
-printf "  ${DIM}Launch:${RST}\n"
-printf "    cd ${INSTALL_DIR}/src && ./RunMe.sh ${O11PRO_PORT:-1337} ${O11PRO_VERBOSE:-2}\n"
-echo
+# Verify that the launcher exists and is executable
+if [ ! -f "$INSTALL_DIR/src/RunMe.sh" ]; then
+  fail "RunMe.sh not found in src/ — cannot start."
+fi
+if [ ! -x "$INSTALL_DIR/src/RunMe.sh" ]; then
+  chmod +x "$INSTALL_DIR/src/RunMe.sh"
+fi
+
+cd "$INSTALL_DIR/src"
+exec ./RunMe.sh

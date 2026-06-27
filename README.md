@@ -17,25 +17,6 @@ sudo sh -c "$(wget -O- https://raw.githubusercontent.com/Ap0dexMe0/o11pro-unpack
 sudo sh -c "$(fetch -o - https://raw.githubusercontent.com/Ap0dexMe0/o11pro-unpacked/main/install.sh)"
 ```
 
-### Install options (via environment variables)
-
-| Variable        | Description                   | Default        |
-| --------------- | ----------------------------- | -------------- |
-| `O11PRO_DIR`    | Install directory             | `/root/o11pro-unpacked` |
-| `O11PRO_PORT`   | Server port                   | `1337`         |
-| `O11PRO_VERBOSE`| Log level (0–5)               | `2`            |
-| `O11PRO_USER`   | Admin username                | auto-generated |
-| `O11PRO_PASS`   | Admin password                | auto-generated |
-| `O11PRO_BRANCH` | Git branch to clone           | `main`         |
-| `O11PRO_YES`    | Skip confirm prompts          | `0`            |
-
-Example with custom options:
-
-```bash
-O11PRO_PORT=8080 O11PRO_YES=1 \
-  sudo sh -c "$(curl -fsSL https://raw.githubusercontent.com/Ap0dexMe0/o11pro-unpacked/main/install.sh)"
-```
-
 ---
 
 ## Further Reading
