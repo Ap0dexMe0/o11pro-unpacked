@@ -57,8 +57,8 @@ GOMEMLIMIT="${GOMEMLIMIT:-2GiB}"
 KEEP_FALSE=true
 MAX_STREAMS="${MAX_STREAMS:-0}"
 HTTPS="${HTTPS:-false}"
-ADMIN_USER="${ADMIN_USER:-}"
-ADMIN_PASS="${ADMIN_PASS:-}"
+ADMIN_USER="${ADMIN_USER:-admin}"
+ADMIN_PASS="${ADMIN_PASS:-admin1337}"
 
 # Working directory (where binary and configs live)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -213,9 +213,7 @@ if [ "$MONITOR" = "true" ]; then
     echo "  Audit log:           logs/audit.log"
     echo "  Alert log:           logs/audit_alerts.log"
 fi
-echo "  (use 127.0.0.1 instead of 127.0.0.1 in your browser)"
-echo ""
-echo "Login: admin / <see temp password in log below>"
+echo ".++===========================================================================================++."
 echo ""
 
 # FIX: Unified background PID tracking + cleanup (replaces separate handlers)
@@ -250,7 +248,7 @@ if [ "$MONITOR" = "true" ] || [ "$HLS_PROXY" = "true" ]; then
     while [ $_O11_TRIES -lt 30 ]; do
         _O11_TRIES=$((_O11_TRIES + 1))
         if python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1',$PORT)); s.close()" 2>/dev/null; then
-            echo "o11pro is ready"
+            echo ".++===========================================================================================++."
             break
         fi
         if [ $_O11_TRIES -eq 30 ]; then
@@ -265,18 +263,26 @@ if [ "$MONITOR" = "true" ] || [ "$HLS_PROXY" = "true" ]; then
     if [ "$HLS_PROXY" = "true" ]; then
         if [ ! -f "modules/hls_proxy.py" ]; then
             echo "WARNING: modules/hls_proxy.py not found skipping HLS proxy"
-        elif [ ! -f "$HLS_PROXY_CONFIG" ]; then
-            echo "WARNING: HLS proxy config not found at $HLS_PROXY_CONFIG skipping HLS proxy"
-            echo "  Run setup.sh to auto-generate it from provider config"
         else
-            echo "Starting HLS Proxy on port $HLS_PROXY_PORT..."
-            python3 modules/hls_proxy.py \
-                --config "$HLS_PROXY_CONFIG" \
-                --port "$HLS_PROXY_PORT" \
-                --bind "$HLS_PROXY_BIND" &
-            HLS_PID=$!
-            _BG_PIDS="$_BG_PIDS $HLS_PID"
-            echo "HLS Proxy started (PID $HLS_PID)"
+            # Auto-generate orig_urls.json from provider .cfg files
+            if [ -f "modules/generate_orig_urls.py" ]; then
+                echo "Generating HLS proxy config from providers..."
+                python3 modules/generate_orig_urls.py \
+                    --dir "$PROJECT_ROOT/providers" \
+                    --output "$HLS_PROXY_CONFIG" || true
+            fi
+            if [ ! -f "$HLS_PROXY_CONFIG" ]; then
+                echo "WARNING: HLS proxy config not found at $HLS_PROXY_CONFIG skipping HLS proxy"
+            else
+                echo "Starting HLS Proxy on port $HLS_PROXY_PORT..."
+                python3 modules/hls_proxy.py \
+                    --config "$HLS_PROXY_CONFIG" \
+                    --port "$HLS_PROXY_PORT" \
+                    --bind "$HLS_PROXY_BIND" &
+                HLS_PID=$!
+                _BG_PIDS="$_BG_PIDS $HLS_PID"
+                echo "HLS Proxy started (PID $HLS_PID)"
+            fi
         fi
     fi
 
